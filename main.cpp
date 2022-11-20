@@ -4,7 +4,9 @@
 #include <string>
 #include <stdio.h>
 #include <time.h>
+#include <chrono>
 #include <map>
+#include <math.h>
 #include "pcie.h"
 //pcm-raw -e imc/config=0x09,name=ECC_CORRECTABLE_ERRORS/
 //https://github.com/Chester-Gillon/pcm
@@ -17,21 +19,25 @@ bool DEBUG=false;
 bool SHOW_CHANNELS=false;
 bool SHOW_MEMORY=false;
 bool SHOW_PCIE=false;
-string SEP="\t";
+string SEP="    "; //\t";
 constexpr uint32 max_sockets = 256;
 uint32 max_imc_channels = ServerUncoreCounterState::maxChannels;
 const uint32 max_edc_channels = ServerUncoreCounterState::maxChannels;
 const uint32 max_imc_controllers = ServerUncoreCounterState::maxControllers;
 
 const std::string currentDateTime() {
-    time_t     now = time(0);
-    struct tm  tstruct;
-    char       buf[80];
-    tstruct = *localtime(&now);
-    // Visit http://en.cppreference.com/w/cpp/chrono/c/strftime
-    // for more information about date/time format
-    //strftime(buf, sizeof(buf), "%Y-%m-%d.%X", &tstruct);
-    strftime(buf, sizeof(buf), "%X", &tstruct);
+    tm localTime;
+    std::chrono::system_clock::time_point t = std::chrono::system_clock::now();
+    time_t now = std::chrono::system_clock::to_time_t(t);
+    localtime_r(&now, &localTime);
+    const std::chrono::duration<double> tse = t.time_since_epoch();
+    std::chrono::seconds::rep milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(tse).count() % 1000;
+    char buf[32];
+    if (delay<1){
+        snprintf(buf, sizeof(buf), "%02d:%02d:%02d.%03d", localTime.tm_hour, localTime.tm_min, localTime.tm_sec, milliseconds);
+    }else{
+        snprintf(buf, sizeof(buf), "%02d:%02d:%02d", localTime.tm_hour, localTime.tm_min, localTime.tm_sec);
+    }
     return buf;
 }
 
@@ -57,7 +63,8 @@ IPlatform *IPlatform::getPlatform(PCM *m, bool csv, bool bw, bool verbose, uint3
 
 void printMemBW(uint32 numSockets, const ServerUncoreCounterState uncState1[], const ServerUncoreCounterState uncState2[], const uint64 elapsedTime){
     auto toBW = [&elapsedTime](const uint64 nEvents){
-        return (float)(nEvents * 64 / 1000000.0 / (elapsedTime / 1000.0));
+        float val=(nEvents * 64 / 1000000.0 / (elapsedTime / 1000.0));
+        return roundf(val * 100) / 100;
     };
     uint64 reads=0, writes=0;
     for (uint32 i=0; i<numSockets; ++i) {
@@ -68,16 +75,11 @@ void printMemBW(uint32 numSockets, const ServerUncoreCounterState uncState1[], c
             sktReads+=reads;
             sktWrites+=writes;
 			if (SHOW_CHANNELS){
-	            //cout << "|-- NODE" << i << " channel " << channel << " read: " << setw(8) << toBW(reads) << " --|";
-	            //cout << "|-- NODE" << i << " channel " << channel << " writes: " << setw(8) << toBW(writes) << endl;
-	            // read  write
 	            cout << SEP << setw(6) << toBW(reads) << SEP << setw(6) << toBW(writes);
 			}
         }
 		if (SHOW_MEMORY){
-            //cout << "|-- NODE" << i << " Mem Read (MB/s) : " << setw(8) << toBW(sktReads)  << " --|";
-            //cout << "|-- NODE" << i << " Mem Write(MB/s) : " << setw(8) << toBW(sktWrites) << " --|" << endl;
-            cout << SEP << setw(9) << toBW(sktReads) << SEP << setw(9) << toBW(sktWrites);
+            cout << SEP << setw(6) << toBW(sktReads) << SEP << setw(6) << toBW(sktWrites);
 	    }
     }
     cout << "\n";
@@ -128,7 +130,7 @@ int main(int argc, char** argv) {
     }
     uint32 numSockets = m->getNumSockets();
     max_imc_channels = (pcm::uint32)m->getMCChannelsPerSocket();
-    cout << "Time    ";
+    cout << "Time      ";
     if (SHOW_CHANNELS){
         for (uint32 i=0; i<numSockets; ++i) {
             for (uint32 c=0; c<max_imc_channels; ++c){
@@ -138,7 +140,7 @@ int main(int argc, char** argv) {
     }
     if (SHOW_MEMORY){
         for (uint32 i=0; i<numSockets; ++i) {
-            cout <<SEP<< "SKT"<<i<<"Read" <<SEP<< "SKT"<<i<<"Write" ;
+            cout <<SEP<< "S"<<i<<"Read" <<SEP<< "S"<<i<<"Write" ;
         }
     }
     cout << endl;
@@ -148,7 +150,7 @@ int main(int argc, char** argv) {
     uint64 BeforeTime = 0, AfterTime = 0;
     BeforeTime = m->getTickCount();
     for (;;){
-        cout << currentDateTime()<<"    ";
+        cout << currentDateTime();
         if (SHOW_PCIE){
             platform->getEvents();//pcie
             platform->printHeader();
