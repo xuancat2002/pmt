@@ -126,7 +126,7 @@ int main(int argc, char** argv) {
         std::cout << "unsupported platform, exiting." << std::endl;
         return -1;
     }else{
-        std::cout << m->getCPUModel() << " CPU Detected." << std::endl;
+        //std::cout << m->getCPUModel() << " CPU Detected." << std::endl;
     }
     uint32 numSockets = m->getNumSockets();
     max_imc_channels = (pcm::uint32)m->getMCChannelsPerSocket();
