@@ -7,6 +7,7 @@
 #include <chrono>
 #include <map>
 #include <math.h>
+#include <fstream>
 #include "pcie.h"
 //pcm-raw -e imc/config=0x09,name=ECC_CORRECTABLE_ERRORS/
 //https://github.com/Chester-Gillon/pcm
@@ -14,18 +15,35 @@
 using namespace std;
 using namespace pcm;
 
+ofstream OUT;
+string OUT_FILE="";
 float delay=1.0;
 bool DEBUG=false;
 bool SHOW_CHANNELS=false;
 bool SHOW_MEMORY=false;
 bool SHOW_PCIE=false;
-string SEP="    "; //\t";
+string SEP="    ";
 constexpr uint32 max_sockets = 256;
 uint32 max_imc_channels = ServerUncoreCounterState::maxChannels;
 const uint32 max_edc_channels = ServerUncoreCounterState::maxChannels;
 const uint32 max_imc_controllers = ServerUncoreCounterState::maxControllers;
 
-const std::string currentDateTime() {
+void empty_output(){
+    std::ofstream out(OUT_FILE);
+    out << "";
+    out.close();
+}
+void append_file(string data){
+    //OUT.open(OUT_FILE, ios_base::app);
+    //if (OUT.is_open()){
+        //cout<<"data("<<data.size() <<")="<<data<<endl;
+        //OUT.write(data.data(), data.size());
+        OUT << data;
+        OUT.flush();
+    //}
+}
+
+string currentDateTime() {
     tm localTime;
     std::chrono::system_clock::time_point t = std::chrono::system_clock::now();
     time_t now = std::chrono::system_clock::to_time_t(t);
@@ -74,15 +92,32 @@ void printMemBW(uint32 numSockets, const ServerUncoreCounterState uncState1[], c
             writes = getMCCounter(channel, ServerPCICFGUncore::EventPosition::WRITE, uncState1[i], uncState2[i]);
             sktReads+=reads;
             sktWrites+=writes;
-			if (SHOW_CHANNELS){
-	            cout << SEP << setw(6) << toBW(reads) << SEP << setw(6) << toBW(writes);
-			}
+            if (SHOW_CHANNELS){
+                if (OUT_FILE.size()<1){
+	                cout << SEP << setw(6) << toBW(reads) << SEP << setw(6) << toBW(writes);
+                }else{
+                    char buf[256];
+                    snprintf(buf, sizeof(buf), ",%.2f,%.2f", toBW(reads),toBW(writes));
+                    append_file(buf);
+                }
+            }
         }
 		if (SHOW_MEMORY){
-            cout << SEP << setw(6) << toBW(sktReads) << SEP << setw(6) << toBW(sktWrites);
+            if (OUT_FILE.size()<1){
+                cout << SEP << setw(6) << toBW(sktReads) << SEP << setw(6) << toBW(sktWrites);
+            }else{
+                char buf[128];
+                snprintf(buf, 128, ",%.2f,%.2f",toBW(sktReads),toBW(sktWrites));
+                append_file(buf);
+            }
 	    }
     }
-    cout << "\n";
+
+    if (OUT_FILE.size()<1){
+        cout << endl << flush;
+    }else{
+        append_file("\n");
+    }
 }
 
 int main(int argc, char** argv) {
@@ -90,6 +125,7 @@ int main(int argc, char** argv) {
     options.add_options()
         ("g,debug",   "Enable debug info",    cxxopts::value<bool>()->default_value("false"))
         ("v,version", "Version output",       cxxopts::value<bool>()->default_value("false"))
+        ("o,output",  "Write to csv file",    cxxopts::value<string>()->default_value(""))
         ("s,delay",   "Seconds/update",       cxxopts::value<float>()->default_value("1.0"))
         ("m,memory",  "Show memory bandwidth",cxxopts::value<bool>()->default_value("true"))
         ("c,channels","Show memory channels", cxxopts::value<bool>()->default_value("false"))
@@ -106,9 +142,17 @@ int main(int argc, char** argv) {
       std::cout << "cpu performance monitor tool\n" << "version: 0.0.1" << std::endl;
       exit(0);
     }
+
     DEBUG = result["debug"].as<bool>();
     //if (DEBUG) spdlog::set_level(spdlog::level::debug);
     //else spdlog::set_level(spdlog::level::warn);
+    OUT_FILE=result["output"].as<string>();
+    if (OUT_FILE.size()>0){
+        SEP=",";
+        empty_output();
+        OUT.open(OUT_FILE, ios_base::app);
+    }
+    //cout<<"OUT_FILE.size()="<<OUT_FILE.size()<<endl;
     SHOW_CHANNELS=result["channels"].as<bool>();
     SHOW_MEMORY=result["memory"].as<bool>();
     SHOW_PCIE=result["pcie"].as<bool>();
@@ -130,27 +174,50 @@ int main(int argc, char** argv) {
     }
     uint32 numSockets = m->getNumSockets();
     max_imc_channels = (pcm::uint32)m->getMCChannelsPerSocket();
-    cout << "Time      ";
+    if (OUT_FILE.size()<1)
+        cout << "Time      ";
+    else
+        append_file("Time,");
     if (SHOW_CHANNELS){
         for (uint32 i=0; i<numSockets; ++i) {
             for (uint32 c=0; c<max_imc_channels; ++c){
-                cout <<SEP<< "S"<<i<<"C"<<c<<"R" <<SEP<< "S"<<i<<"C"<<c<<"W" ;
+                if (OUT_FILE.size()<1){
+                    cout <<SEP<< "S"<<i<<"C"<<c<<"R" <<SEP<< "S"<<i<<"C"<<c<<"W" ;
+                }else{
+                    char buf[256];
+                    snprintf(buf, sizeof(buf), "S%dC%dR,S%dC%dW", i,c,i,c);
+                    append_file(buf);
+                }
             }
         }
     }
     if (SHOW_MEMORY){
         for (uint32 i=0; i<numSockets; ++i) {
-            cout <<SEP<< "S"<<i<<"Read" <<SEP<< "S"<<i<<"Write" ;
+            if (OUT_FILE.size()<1){
+                cout <<SEP<< "S"<<i<<"Read" <<SEP<< "S"<<i<<"Write";
+            }else{
+                char buf[256];
+                snprintf(buf, sizeof(buf), "S%dRead,S%dWrite",i,i);
+                append_file(buf);
+            }
         }
     }
-    cout << endl;
+    if (OUT_FILE.size()<1){
+        cout << endl;
+    }else{
+        append_file("\n");
+    }
 
     ServerUncoreCounterState * BeforeState = new ServerUncoreCounterState[m->getNumSockets()];
     ServerUncoreCounterState * AfterState = new ServerUncoreCounterState[m->getNumSockets()];
     uint64 BeforeTime = 0, AfterTime = 0;
     BeforeTime = m->getTickCount();
     for (;;){
-        cout << currentDateTime();
+        if (OUT_FILE.size()<1){
+            cout << currentDateTime();
+        }else{
+            append_file(currentDateTime());
+        }
         if (SHOW_PCIE){
             platform->getEvents();//pcie
             platform->printHeader();
