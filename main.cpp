@@ -177,28 +177,29 @@ int main(int argc, char** argv) {
     if (OUT_FILE.size()<1)
         cout << "Time      ";
     else
-        append_file("Time,");
-    if (SHOW_CHANNELS){
-        for (uint32 i=0; i<numSockets; ++i) {
-            for (uint32 c=0; c<max_imc_channels; ++c){
-                if (OUT_FILE.size()<1){
-                    cout <<SEP<< "S"<<i<<"C"<<c<<"R" <<SEP<< "S"<<i<<"C"<<c<<"W" ;
-                }else{
-                    char buf[256];
-                    snprintf(buf, sizeof(buf), "S%dC%dR,S%dC%dW", i,c,i,c);
-                    append_file(buf);
-                }
-            }
-        }
-    }
+        append_file("Time");
+
     if (SHOW_MEMORY){
         for (uint32 i=0; i<numSockets; ++i) {
-            if (OUT_FILE.size()<1){
-                cout <<SEP<< "S"<<i<<"Read" <<SEP<< "S"<<i<<"Write";
-            }else{
-                char buf[256];
-                snprintf(buf, sizeof(buf), "S%dRead,S%dWrite",i,i);
-                append_file(buf);
+            if (SHOW_CHANNELS){
+                for (uint32 c=0; c<max_imc_channels; ++c){
+                    if (OUT_FILE.size()<1){
+                        cout <<SEP<< "S"<<i<<"C"<<c<<"R" <<SEP<< "S"<<i<<"C"<<c<<"W" ;
+                    }else{
+                        char buf[256];
+                        snprintf(buf, sizeof(buf), ",S%dC%dR,S%dC%dW", i,c,i,c);
+                        append_file(buf);
+                    }
+                }
+            }
+            if (SHOW_MEMORY){
+                if (OUT_FILE.size()<1){
+                    cout <<SEP<< "S"<<i<<"Read" <<SEP<< "S"<<i<<"Write";
+                }else{
+                    char buf[256];
+                    snprintf(buf, sizeof(buf), ",S%dRead,S%dWrite",i,i);
+                    append_file(buf);
+                }
             }
         }
     }
