@@ -12,7 +12,7 @@
 using namespace std;
 using namespace pcm;
 
-int delay=1;
+float delay=1.0;
 bool DEBUG=false;
 bool SHOW_CHANNELS=false;
 bool SHOW_MEMORY=false;
@@ -88,7 +88,7 @@ int main(int argc, char** argv) {
     options.add_options()
         ("g,debug",   "Enable debug info",    cxxopts::value<bool>()->default_value("false"))
         ("v,version", "Version output",       cxxopts::value<bool>()->default_value("false"))
-        ("s,delay",   "Seconds/update",       cxxopts::value<int>()->default_value("1"))
+        ("s,delay",   "Seconds/update",       cxxopts::value<float>()->default_value("1.0"))
         ("m,memory",  "Show memory bandwidth",cxxopts::value<bool>()->default_value("true"))
         ("c,channels","Show memory channels", cxxopts::value<bool>()->default_value("false"))
         ("p,pcie",    "Show pcie bandwidth",  cxxopts::value<bool>()->default_value("false"))
@@ -110,7 +110,7 @@ int main(int argc, char** argv) {
     SHOW_CHANNELS=result["channels"].as<bool>();
     SHOW_MEMORY=result["memory"].as<bool>();
     SHOW_PCIE=result["pcie"].as<bool>();
-    delay=result["delay"].as<int>(); //PCM_DELAY_DEFAULT
+    delay=result["delay"].as<float>(); //PCM_DELAY_DEFAULT
     /////////////////////////////////////////////
     PCM *m = PCM::getInstance();
     PCM::ErrorCode returnResult = m->program();
@@ -119,7 +119,7 @@ int main(int argc, char** argv) {
         std::cerr << "Error code: " << returnResult << std::endl;
         exit(1);
     }
-    unique_ptr<IPlatform> platform(IPlatform::getPlatform(m, false, true, true, (uint)2));
+    unique_ptr<IPlatform> platform(IPlatform::getPlatform(m, false, true, true, (uint)delay));
     if (platform == NULL){
         std::cout << "unsupported platform, exiting." << std::endl;
         return -1;
