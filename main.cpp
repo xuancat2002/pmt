@@ -65,15 +65,15 @@ IPlatform *IPlatform::getPlatform(PCM *m, bool csv, bool bw, bool verbose, uint3
         case PCM::SNOWRIDGE:
             return new WhitleyPlatform(m, csv, bw, verbose, delay);
         case PCM::SKX:
-            return new PurleyPlatform(m, csv, bw, verbose, delay);
+            //return new PurleyPlatform(m, csv, bw, verbose, delay);
         case PCM::BDX_DE:
         case PCM::BDX:
         case PCM::KNL:
         case PCM::HASWELLX:
-            return new GrantleyPlatform(m, csv, bw, verbose, delay);
+            //return new GrantleyPlatform(m, csv, bw, verbose, delay);
         case PCM::IVYTOWN:
         case PCM::JAKETOWN:
-            return new BromolowPlatform(m, csv, bw, verbose, delay);
+            //return new BromolowPlatform(m, csv, bw, verbose, delay);
         default:
           return NULL;
     }
@@ -209,8 +209,8 @@ int main(int argc, char** argv) {
         append_file("\n");
     }
 
-    ServerUncoreCounterState * BeforeState = new ServerUncoreCounterState[m->getNumSockets()];
-    ServerUncoreCounterState * AfterState = new ServerUncoreCounterState[m->getNumSockets()];
+    ServerUncoreCounterState * BeforeState = new ServerUncoreCounterState[m->getNumSockets()];  //memory
+    ServerUncoreCounterState * AfterState  = new ServerUncoreCounterState[m->getNumSockets()];   //memory
     uint64 BeforeTime = 0, AfterTime = 0;
     BeforeTime = m->getTickCount();
     for (;;){
@@ -225,7 +225,8 @@ int main(int argc, char** argv) {
             platform->printEvents();
         }
         for (uint32 i=0; i<numSockets; ++i) {
-            AfterState[i] = m->getServerUncoreCounterState(i);
+            AfterState[i] = m->getServerUncoreCounterState(i);  //memory
+            // m->getPCIeCounterData(skt, ctr);
         }
         AfterTime = m->getTickCount();
         printMemBW(numSockets,BeforeState,AfterState,AfterTime-BeforeTime);
@@ -234,10 +235,7 @@ int main(int argc, char** argv) {
         platform->cleanup();
         MySleepMs(delay*1000);
     }
-    //    if (m->isBlocked())
-    //        return false;
-    //    return true;
-    //});
+
     delete[] BeforeState;
     delete[] AfterState;
     //std::cout << "=====================================" << std::endl;
