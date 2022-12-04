@@ -3,32 +3,22 @@
 #include <memory>
 #include <fstream>
 #include <stdlib.h>
-#include <stdexcept>      // std::length_error
+#include <stdexcept>
 #include <cstdint>
 #include <numeric>
 #include <algorithm>
 #include "lspci.h"
 #include "utils.h"
+#include "cxxopts.hpp"
 using namespace std;
 using namespace pcm;
 
-#define PCM_DELAY_DEFAULT 2.0 // in seconds
-
-#define QAT_DID 0x18DA
-#define NIS_DID 0x18D1
-#define HQM_DID 0x270B
-
-#define ROOT_BUSES_OFFSET   0xCC
-#define ROOT_BUSES_OFFSET_2 0xD0
-
-#define SKX_SOCKETID_UBOX_DID 0x2014
-#define SKX_UBOX_DEVICE_NUM   0x08
-#define SKX_UBOX_FUNCTION_NUM 0x02
-#define SKX_BUS_NUM_STRIDE    8
-//the below LNID and GID applies to Skylake Server
-#define SKX_UNC_SOCKETID_UBOX_LNID_OFFSET 0xC0
-#define SKX_UNC_SOCKETID_UBOX_GID_OFFSET  0xD4
-
+string csv_delimiter = ",";
+std::ostream* OUT = &std::cout;
+string OUT_FILE="";
+string ONLY="";
+float delay=1.0;
+bool DEBUG=false;
 const uint8_t max_sockets = 4;
 static const std::string iio_stack_names[6] = {
     "IIO Stack 0 - CBDMA/DMI      ",
@@ -38,16 +28,6 @@ static const std::string iio_stack_names[6] = {
     "IIO Stack 4 - MCP0           ",
     "IIO Stack 5 - MCP1           "
 };
-
-static const std::string skx_iio_stack_names[6] = {
-    "IIO Stack 0 - CBDMA/DMI      ",
-    "IIO Stack 1 - PCIe0          ",
-    "IIO Stack 2 - PCIe1          ",
-    "IIO Stack 3 - PCIe2          ",
-    "IIO Stack 4 - MCP0           ",
-    "IIO Stack 5 - MCP1           "
-};
-
 static const std::string icx_iio_stack_names[6] = {
     "IIO Stack 0 - PCIe0          ",
     "IIO Stack 1 - PCIe1          ",
@@ -56,7 +36,6 @@ static const std::string icx_iio_stack_names[6] = {
     "IIO Stack 4 - PCIe3          ",
     "IIO Stack 5 - CBDMA/DMI      "
 };
-
 static const std::string icx_d_iio_stack_names[6] = {
     "IIO Stack 0 - MCP            ",
     "IIO Stack 1 - PCIe0          ",
@@ -66,26 +45,14 @@ static const std::string icx_d_iio_stack_names[6] = {
     "IIO Stack 5 - PCIe1          "
 };
 
-static const std::string snr_iio_stack_names[5] = {
-    "IIO Stack 0 - QAT            ",
-    "IIO Stack 1 - CBDMA/DMI      ",
-    "IIO Stack 2 - NIS            ",
-    "IIO Stack 3 - HQM            ",
-    "IIO Stack 4 - PCIe           "
-};
-
 #define ICX_CBDMA_DMI_SAD_ID 0
 #define ICX_MCP_SAD_ID       3
-
 #define ICX_PCH_PART_ID   0
 #define ICX_CBDMA_PART_ID 3
-
 #define SNR_ICX_SAD_CONTROL_CFG_OFFSET 0x3F4
 #define SNR_ICX_MESH2IIO_MMAP_DID      0x09A2
-
 #define ICX_VMD_PCI_DEVNO   0x00
 #define ICX_VMD_PCI_FUNCNO  0x05
-
 static const std::map<int, int> icx_sad_to_pmu_id_mapping = {
     { ICX_CBDMA_DMI_SAD_ID, 5 },
     { 1,                    0 },
@@ -94,7 +61,6 @@ static const std::map<int, int> icx_sad_to_pmu_id_mapping = {
     { 4,                    3 },
     { 5,                    4 }
 };
-
 static const std::map<int, int> icx_d_sad_to_pmu_id_mapping = {
     { ICX_CBDMA_DMI_SAD_ID, 2 },
     { 1,                    5 },
@@ -102,24 +68,6 @@ static const std::map<int, int> icx_d_sad_to_pmu_id_mapping = {
     { ICX_MCP_SAD_ID,       0 },
     { 4,                    3 },
     { 5,                    4 }
-};
-
-#define SNR_ACCELERATOR_PART_ID 4
-
-#define SNR_ROOT_PORT_A_DID 0x334A
-
-#define SNR_CBDMA_DMI_SAD_ID 0
-#define SNR_PCIE_GEN3_SAD_ID 1
-#define SNR_HQM_SAD_ID       2
-#define SNR_NIS_SAD_ID       3
-#define SNR_QAT_SAD_ID       4
-
-static const std::map<int, int> snr_sad_to_pmu_id_mapping = {
-    { SNR_CBDMA_DMI_SAD_ID, 1 },
-    { SNR_PCIE_GEN3_SAD_ID, 4 },
-    { SNR_HQM_SAD_ID      , 3 },
-    { SNR_NIS_SAD_ID      , 2 },
-    { SNR_QAT_SAD_ID      , 0 }
 };
 
 map<string,PCM::PerfmonField> opcodeFieldMap;
@@ -338,7 +286,7 @@ std::string get_root_port_dev(const bool show_root_port, int part_id,  const pcm
 
 }
 
-vector<string> build_csv(vector<struct iio_stacks_on_socket>& iios, vector<struct counter>& ctrs, const bool human_readable, const bool show_root_port, const std::string& csv_delimiter){
+vector<string> build_csv(vector<struct iio_stacks_on_socket>& iios, vector<struct counter>& ctrs, const bool show_root_port){
     vector<string> result;
     vector<string> current_row;
     auto header = combine_stack_name_and_counter_names("Part");
@@ -360,12 +308,8 @@ vector<string> build_csv(vector<struct iio_stacks_on_socket>& iios, vector<struc
             const std::string socket_name = "Socket" + std::to_string(socket->socket_id);
 
             std::string stack_name = stack->stack_name;
-            if (!human_readable) {
-                stack_name.erase(stack_name.find_last_not_of(' ') + 1);
-            }
-
+            stack_name.erase(stack_name.find_last_not_of(' ') + 1);
             const uint32_t stack_id = stack->iio_unit_id;
-            //Print data
             int part_id;
             std::map<uint32_t,map<uint32_t,struct counter*>>::const_iterator vunit;
             for (vunit = v_sort.cbegin(), part_id = 0;
@@ -374,10 +318,7 @@ vector<string> build_csv(vector<struct iio_stacks_on_socket>& iios, vector<struc
                 uint32_t vv_id = vunit->first;
                 vector<uint64_t> h_data;
                 string v_name = h_array[0]->v_event_name;
-                if (human_readable) {
-                    v_name += string(max_name_width - (v_name.size()), ' ');
-                }
-
+                //v_name += string(max_name_width - (v_name.size()), ' ');
                 current_row.clear();
                 current_row.push_back(socket_name);
                 if (show_root_port) {
@@ -389,7 +330,7 @@ vector<string> build_csv(vector<struct iio_stacks_on_socket>& iios, vector<struc
                 for (map<uint32_t,struct counter*>::const_iterator hunit = h_array.cbegin(); hunit != h_array.cend(); ++hunit) {
                     uint32_t hh_id = hunit->first;
                     uint64_t raw_data = hunit->second->data[0][socket->socket_id][stack_id][std::pair<h_id,v_id>(hh_id,vv_id)];
-                    current_row.push_back(human_readable ? unit_format(raw_data) : std::to_string(raw_data));
+                    current_row.push_back(std::to_string(raw_data));  // unit_format(raw_data)
                 }
                 result.push_back(build_csv_row(current_row, csv_delimiter));
             }
@@ -464,8 +405,7 @@ public:
         icx_d(PCM::getInstance()->getCPUModelFromCPUID() == PCM::ICX_D),
         sad_to_pmu_id_mapping(icx_d ? icx_d_sad_to_pmu_id_mapping : icx_sad_to_pmu_id_mapping),
         iio_stack_names(icx_d ? icx_d_iio_stack_names : icx_iio_stack_names)
-    {
-    }
+    {}
     ~WhitleyPlatformMapping() = default;
     bool pciTreeDiscover(std::vector<struct iio_stacks_on_socket>& iios, uint32_t sockets_count) override;
 };
@@ -475,29 +415,22 @@ bool WhitleyPlatformMapping::pciTreeDiscover(std::vector<struct iio_stacks_on_so
         struct iio_stacks_on_socket iio_on_socket;
         iio_on_socket.socket_id = socket;
         std::map<uint8_t, uint8_t> sad_id_bus_map;
-        if (!getSadIdRootBusMap(socket, sad_id_bus_map)) {
-            return false;
-        }
-
+        if (!getSadIdRootBusMap(socket, sad_id_bus_map)) return false;
         {
             struct iio_stack stack;
             stack.iio_unit_id = sad_to_pmu_id_mapping.at(ICX_MCP_SAD_ID);
             stack.stack_name = iio_stack_names[stack.iio_unit_id];
             iio_on_socket.stacks.push_back(stack);
         }
-
         for (auto sad_id_bus_pair = sad_id_bus_map.cbegin(); sad_id_bus_pair != sad_id_bus_map.cend(); ++sad_id_bus_pair) {
             int sad_id = sad_id_bus_pair->first;
-            if (sad_to_pmu_id_mapping.find(sad_id) ==
-                sad_to_pmu_id_mapping.end()) {
+            if (sad_to_pmu_id_mapping.find(sad_id) == sad_to_pmu_id_mapping.end()) {
                 cerr << "Unknown SAD ID: " << sad_id << endl;
                 return false;
             }
-
             if (sad_id == ICX_MCP_SAD_ID) {
                 continue;
             }
-
             struct iio_stack stack;
             int root_bus = sad_id_bus_pair->second;
             if (sad_id == ICX_CBDMA_DMI_SAD_ID) {
@@ -598,16 +531,14 @@ IPlatformMapping* IPlatformMapping::getPlatformMapping(int cpu_model){
 }
 
 std::string dos2unix(std::string in){
-    if (in.length() > 0 && int(in[in.length() - 1]) == 13)
-    {
+    if (in.length() > 0 && int(in[in.length() - 1]) == 13){
         in.erase(in.length() - 1);
     }
     return in;
 }
 
 ccr* get_ccr(PCM* m, uint64_t& ccr){
-    switch (m->getCPUModel())
-    {
+    switch (m->getCPUModel()){
         case PCM::SKX:
             //return new skx_ccr(ccr);
         case PCM::ICX:
@@ -627,12 +558,10 @@ vector<struct counter> load_events(PCM * m, const char* fn){
     std::ifstream in(fn);
     std::string line, item;
 
-    if (!in.is_open())
-    {
+    if (!in.is_open()){
         const auto alt_fn = std::string("/usr/share/pcm/") + fn;
         in.open(alt_fn);
-        if (!in.is_open())
-        {
+        if (!in.is_open()){
             const auto err_msg = std::string("event file ") + fn + " or " + alt_fn + " is not available. Copy it from PCM build directory.";
             throw std::invalid_argument(err_msg);
         }
@@ -816,101 +745,46 @@ void print_PCIeMapping(const std::vector<struct iio_stacks_on_socket>& iios, con
     }
 }
 
-void print_usage(const string& progname){
-    cout << "\n Usage: \n " << progname << " --help | [interval] [options] \n";
-    cout << "   <interval>                           => time interval in seconds (floating point number is accepted)\n";
-    cout << "                                        to sample performance counters.\n";
-    cout << "                                        If not specified - 3.0 is used\n";
-    cout << " Supported <options> are: \n";
-    cout << "  -h    | --help  | /h               => print this help and exit\n";
-    cout << "  -silent                            => silence information output and print only measurements\n";
-    cout << "  --version                          => print application version\n";
-    cout << "  -csv[=file.csv] | /csv[=file.csv]  => output compact CSV format to screen or\n"
-         << "                                        to a file, in case filename is provided\n";
-    cout << "  -csv-delimiter=<value>  | /csv-delimiter=<value>   => set custom csv delimiter\n";
-    cout << "  -human-readable | /human-readable  => use human readable format for output (for csv only)\n";
-    cout << "  -root-port | /root-port            => add root port devices to output (for csv only)\n";
-    cout << "  -i[=number] | /i[=number]          => allow to determine number of iterations\n";
-    cout << " Examples:\n";
-    cout << "  " << progname << " 1.0 -i=10             => print counters every second 10 times and exit\n";
-    cout << "  " << progname << " 0.5 -csv=test.log     => twice a second save counter values to test.log in CSV format\n";
-    cout << "  " << progname << " -csv -human-readable  => every 3 second print counters in human-readable CSV format\n";
-    cout << "\n";
-}
-
-int main(int argc, char * argv[]){
-
-    null_stream nullStream;
-    check_and_set_silent(argc, argv, nullStream);
-
-    set_signal_handlers();
-
-    std::cout << "\n Intel(r) Performance Counter Monitor " << PCM_VERSION << "\n";
-    std::cout << "\n This utility measures Skylake-SP IIO information\n\n";
-
-    string program = string(argv[0]);
+int main(int argc, char** argv) {
+    cxxopts::Options options("pcie", "pcie performance monitor tool");
+    options.add_options()
+        ("g,debug",   "Enable debug info",    cxxopts::value<bool>()->default_value("false"))
+        ("v,version", "Version output",       cxxopts::value<bool>()->default_value("false"))
+        ("o,output",  "Write to csv file",    cxxopts::value<string>()->default_value(""))
+        ("s,delay",   "Seconds/update",       cxxopts::value<float>()->default_value("2.0"))
+        ("l,only",    "Show only pcie list",  cxxopts::value<string>()->default_value(""))
+        ("h,help",    "Print usage")
+        //("n,duration","Duration",           cxxopts::value<int>()->default_value("60"))
+    ;
+    auto result = options.parse(argc, argv);
+    if (result.count("help")){
+      std::cout << options.help() << std::endl;
+      exit(0);
+    }
+    if (result.count("version")){
+      std::cout << "Intel pcie performance monitor tool (ICX)\n" << "version: 0.0.1" << std::endl;
+      exit(0);
+    }
+    delay=result["delay"].as<float>();
+    DEBUG = result["debug"].as<bool>();
+    ONLY = result["only"].as<string>();
+    OUT_FILE=result["output"].as<string>();
 
     vector<struct counter> counters;
     PCIDB pciDB;
     load_PCIDB(pciDB);
     bool csv = false;
-    bool human_readable = false;
     bool show_root_port = false;
-    std::string csv_delimiter = ",";
-    std::string output_file;
-    double delay = PCM_DELAY_DEFAULT;
     MainLoop mainLoop;
     PCM * m = PCM::getInstance();
 
-    while (argc > 1) {
-        argv++;
-        argc--;
-        std::string arg_value;
-        if (check_argument_equals(*argv, {"--help", "-h", "/h"})) {
-            print_usage(program);
-            exit(EXIT_FAILURE);
-        }
-        else if (check_argument_equals(*argv, {"-silent", "/silent"})) {
-            // handled in check_and_set_silent
-            continue;
-        }
-        else if (extract_argument_value(*argv, {"-csv-delimiter", "/csv-delimiter"}, arg_value)) {
-            csv_delimiter = std::move(arg_value);
-        }
-        else if (check_argument_equals(*argv, {"-csv", "/csv"})) {
-            csv = true;
-        }
-        else if (extract_argument_value(*argv, {"-csv", "/csv"}, arg_value)) {
-            csv = true;
-            output_file = std::move(arg_value);
-        }
-        else if (check_argument_equals(*argv, {"-human-readable", "/human-readable"})) {
-            human_readable = true;
-        }
-        else if (check_argument_equals(*argv, {"-root-port", "/root-port"})) {
-            show_root_port = true;
-        }
-        else if (mainLoop.parseArg(*argv)) {
-            continue;
-        }
-        else {
-            delay = parse_delay(*argv, program, (print_usage_func)print_usage);
-            continue;
-        }
-    }
-
-    print_cpu_details();
     string ev_file_name;
-    if (m->IIOEventsAvailable())
-    {
+    if (m->IIOEventsAvailable()){
         ev_file_name = "opCode-" + std::to_string(m->getCPUModel()) + ".txt";
-    }
-    else
-    {
+    }else{
         cerr << "This CPU is not supported by PCM IIO tool! Program aborted\n";
         exit(EXIT_FAILURE);
     }
-
     opcodeFieldMap["opcode"] = PCM::OPCODE;
     opcodeFieldMap["ev_sel"] = PCM::EVENT_SELECT;
     opcodeFieldMap["umask"] = PCM::UMASK;
@@ -930,14 +804,6 @@ int main(int argc, char * argv[]){
     opcodeFieldMap["ctr"] = PCM::COUNTER_INDEX;
 
     counters = load_events(m, ev_file_name.c_str());
-    //print_nameMap();
-    //TODO: Taking from cli
-
-    //TODO: remove binding to max sockets count.
-    if (m->getNumSockets() > max_sockets) {
-        cerr << "Only systems with up to " << max_sockets << " sockets are supported! Program aborted\n";
-        exit(EXIT_FAILURE);
-    }
 
     auto mapping = IPlatformMapping::getPlatformMapping(m->getCPUModel());
     if (!mapping) {
@@ -950,29 +816,24 @@ int main(int argc, char * argv[]){
         exit(EXIT_FAILURE);
     }
 
-    /* Debug only:
-    print_PCIeMapping(iios, pciDB);
-    return 0;
-    */
-    std::ostream* output = &std::cout;
+    if (DEBUG){
+        print_cpu_details();
+        print_nameMap();
+        print_PCIeMapping(iios, pciDB);
+    }
     std::fstream file_stream;
-    if (!output_file.empty()) {
-        file_stream.open(output_file.c_str(), std::ios_base::out);
-        output = &file_stream;
+    if (OUT_FILE.size()>0) {
+        file_stream.open(OUT_FILE.c_str(), std::ios_base::out);
+        OUT = &file_stream;
     }
 
-    mainLoop([&]()
-    {
+    mainLoop([&](){
         collect_data(m, delay, iios, counters);
-        vector<string> display_buffer = csv ?
-            build_csv(iios, counters, human_readable, show_root_port, csv_delimiter) :
-            build_display(iios, counters, pciDB);
-        display(display_buffer, *output);
+        vector<string> display_buffer = csv ? build_csv(iios, counters, show_root_port) : build_display(iios, counters, pciDB);
+        display(display_buffer, *OUT);
         return true;
     });
 
     file_stream.close();
-
     exit(EXIT_SUCCESS);
 }
-
