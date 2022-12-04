@@ -1,16 +1,5 @@
-// SPDX-License-Identifier: BSD-3-Clause
-// Copyright (c) 2017-2018, Intel Corporation
-
-// written by Patrick Lu,
-//            Aaron Cruz
 #include "cpucounters.h"
-#ifdef _MSC_VER
-#pragma warning(disable : 4996) // for sprintf
-#include <windows.h>
-#include "windows/windriver.h"
-#else
 #include <unistd.h>
-#endif
 #include <memory>
 #include <fstream>
 #include <stdlib.h>
@@ -18,16 +7,12 @@
 #include <cstdint>
 #include <numeric>
 #include <algorithm>
-#ifdef _MSC_VER
-#include "freegetopt/getopt.h"
-#endif
-
 #include "lspci.h"
 #include "utils.h"
 using namespace std;
 using namespace pcm;
 
-#define PCM_DELAY_DEFAULT 3.0 // in seconds
+#define PCM_DELAY_DEFAULT 2.0 // in seconds
 
 #define QAT_DID 0x18DA
 #define NIS_DID 0x18D1
