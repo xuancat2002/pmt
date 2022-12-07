@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <memory>
 #include <fstream>
+#include <sstream>
 #include <stdlib.h>
 #include <stdexcept>
 #include <cstdint>
@@ -16,7 +17,7 @@ using namespace pcm;
 string csv_delimiter = ",";
 std::ostream* OUT = &std::cout;
 string OUT_FILE="";
-string ONLY="";
+vector<string> ONLY;
 float delay=1.0;
 bool DEBUG=false;
 const uint8_t max_sockets = 4;
@@ -267,32 +268,31 @@ std::string build_csv_row(const std::vector<std::string>& chunks, const std::str
 std::string get_root_port_dev(const bool show_root_port, int part_id,  const pcm::iio_stack *stack){
     char tmp[9] = "        ";
     std::string rp_pci;
-
-    if (!show_root_port)
-        return rp_pci;
-
-    for (auto part = stack->parts.begin(); part != stack->parts.end(); part = std::next(part))
-    {
-        if (part->part_id == part_id)
-        {
-            std::snprintf(tmp, sizeof(tmp), "%02x:%02x.%x", part->root_pci_dev.bdf.busno,
-                        part->root_pci_dev.bdf.devno, part->root_pci_dev.bdf.funcno);
+    for (auto part = stack->parts.begin(); part != stack->parts.end(); part = std::next(part)){
+        if (part->part_id == part_id){
+            std::snprintf(tmp, sizeof(tmp), "%02x:%02x.%1d", part->root_pci_dev.bdf.busno, part->root_pci_dev.bdf.devno, part->root_pci_dev.bdf.funcno);
             break;
         }
     }
-
+    //cout<<"part_id="<<part_id<<"    dev="<<tmp<<endl;
     rp_pci.append(tmp);
     return rp_pci;
-
+}
+std::string get_bus_no(const struct pci p){
+    char tmp[9] = "        ";
+    std::string rp_pci;
+    snprintf(tmp, sizeof(tmp), "%02x:%02x.%1d", p.bdf.busno, p.bdf.devno, p.bdf.funcno);
+    //cout<<"    dev="<<tmp<<endl;
+    rp_pci.append(tmp);
+    return rp_pci;
 }
 
-vector<string> build_csv(vector<struct iio_stacks_on_socket>& iios, vector<struct counter>& ctrs, const bool show_root_port){
+vector<string> build_csv(vector<struct iio_stacks_on_socket>& iios, vector<struct counter>& ctrs, const PCIDB& pciDB){
     vector<string> result;
     vector<string> current_row;
     auto header = combine_stack_name_and_counter_names("Part");
     header.insert(header.begin(), "Name");
-    if (show_root_port)
-        header.insert(header.begin(), "Root Port");
+    header.insert(header.begin(), "BusNo");
     header.insert(header.begin(), "Socket");
     result.push_back(build_csv_row(header, csv_delimiter));
     std::map<uint32_t,map<uint32_t,struct counter*>> v_sort;
@@ -306,14 +306,24 @@ vector<string> build_csv(vector<struct iio_stacks_on_socket>& iios, vector<struc
     for (auto socket = iios.cbegin(); socket != iios.cend(); ++socket) {
         for (auto stack = socket->stacks.cbegin(); stack != socket->stacks.cend(); ++stack) {
             const std::string socket_name = "Socket" + std::to_string(socket->socket_id);
-
+            int main_part_id;
+            string bus_no;
+            for (const auto& part : stack->parts) {
+                for (const auto& pci_device : part.child_pci_devs) {
+                    bus_no = get_bus_no(pci_device);
+                    main_part_id=part.part_id;
+                    //cout<<"main_part_id="<<part.part_id<<"   bus_no="<<bus_no<<endl;
+                }
+            }
+            if (!std::count(ONLY.begin(), ONLY.end(), bus_no)) {
+                continue;
+            }
             std::string stack_name = stack->stack_name;
             stack_name.erase(stack_name.find_last_not_of(' ') + 1);
             const uint32_t stack_id = stack->iio_unit_id;
             int part_id;
             std::map<uint32_t,map<uint32_t,struct counter*>>::const_iterator vunit;
-            for (vunit = v_sort.cbegin(), part_id = 0;
-                     vunit != v_sort.cend(); ++vunit, ++part_id) {
+            for (vunit = v_sort.cbegin(), part_id = 0; vunit != v_sort.cend(); ++vunit, ++part_id) {
                 map<uint32_t, struct counter*> h_array = vunit->second;
                 uint32_t vv_id = vunit->first;
                 vector<uint64_t> h_data;
@@ -321,10 +331,9 @@ vector<string> build_csv(vector<struct iio_stacks_on_socket>& iios, vector<struc
                 //v_name += string(max_name_width - (v_name.size()), ' ');
                 current_row.clear();
                 current_row.push_back(socket_name);
-                if (show_root_port) {
-                    auto pci_dev = get_root_port_dev(show_root_port, part_id, &(*stack));
-                    current_row.push_back(pci_dev);
-                }
+                //auto pci_dev = get_root_port_dev(true, part_id, &(*stack));
+                //cout<<"part_id="<<part_id<<"   pci_dev="<<pci_dev<<endl;
+                current_row.push_back(bus_no);
                 current_row.push_back(stack_name);
                 current_row.push_back(v_name);
                 for (map<uint32_t,struct counter*>::const_iterator hunit = h_array.cbegin(); hunit != h_array.cend(); ++hunit) {
@@ -745,6 +754,15 @@ void print_PCIeMapping(const std::vector<struct iio_stacks_on_socket>& iios, con
     }
 }
 
+void split_only(string ids){
+    stringstream ss(ids);
+    string str;
+    while (getline(ss, str, ',')) {
+        ONLY.push_back(str);
+    }
+    cout<<"ONLY="<<ONLY.size()<<endl;
+}
+
 int main(int argc, char** argv) {
     cxxopts::Options options("pcie", "pcie performance monitor tool");
     options.add_options()
@@ -767,14 +785,14 @@ int main(int argc, char** argv) {
     }
     delay=result["delay"].as<float>();
     DEBUG = result["debug"].as<bool>();
-    ONLY = result["only"].as<string>();
+    string s_only = result["only"].as<string>();
+    split_only(s_only);
     OUT_FILE=result["output"].as<string>();
 
     vector<struct counter> counters;
     PCIDB pciDB;
     load_PCIDB(pciDB);
     bool csv = false;
-    bool show_root_port = false;
     MainLoop mainLoop;
     PCM * m = PCM::getInstance();
 
@@ -829,7 +847,8 @@ int main(int argc, char** argv) {
 
     mainLoop([&](){
         collect_data(m, delay, iios, counters);
-        vector<string> display_buffer = csv ? build_csv(iios, counters, show_root_port) : build_display(iios, counters, pciDB);
+        //vector<string> display_buffer = csv ? build_csv(iios, counters, true) : build_display(iios, counters, pciDB);
+        vector<string> display_buffer = build_csv(iios, counters, pciDB);
         display(display_buffer, *OUT);
         return true;
     });
@@ -837,3 +856,4 @@ int main(int argc, char** argv) {
     file_stream.close();
     exit(EXIT_SUCCESS);
 }
+
