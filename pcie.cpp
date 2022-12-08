@@ -136,13 +136,14 @@ vector<string> combine_stack_name_and_counter_names(string stack_name){
     for (std::map<string,std::pair<h_id,std::map<string,v_id>>>::const_iterator iunit = nameMap.begin(); iunit != nameMap.end(); ++iunit) {
         string h_name = iunit->first;
         int h_id = (iunit->second).first;
-        tmp[h_id] = h_name;
+        if (h_id<4) //tmp[h_id] = h_name;
+            v.push_back(h_name);
         //cout << "h_id:" << h_id << " name:" << h_name << "\n";
     }
     //XXX: How to simplify and just combine tmp & v?
-    for (uint32_t i = 0; i < nameMap.size(); i++) {
-        v.push_back(tmp[i]);
-    }
+    //for (uint32_t i = 0; i < nameMap.size(); i++) {
+    //    v.push_back(tmp[i]);
+    //}
     return v;
 }
 
