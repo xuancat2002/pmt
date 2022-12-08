@@ -291,9 +291,9 @@ std::string get_bus_no(const struct pci p){
 vector<string> build_csv(vector<struct iio_stacks_on_socket>& iios, vector<struct counter>& ctrs, const PCIDB& pciDB){
     vector<string> result;
     vector<string> current_row;
-    auto header = combine_stack_name_and_counter_names("Part");
-    header.insert(header.begin(), "Name");
-    header.insert(header.begin(), "BusNo");
+    auto header = combine_stack_name_and_counter_names("Bus");
+    //header.insert(header.begin(), "Name");
+    //header.insert(header.begin(), "BusNo");
     header.insert(header.begin(), "Socket");
     result.push_back(build_csv_row(header, csv_delimiter));
     std::map<uint32_t,map<uint32_t,struct counter*>> v_sort;
