@@ -313,9 +313,11 @@ vector<string> build_csv(vector<struct iio_stacks_on_socket>& iios, vector<struc
                     //cout<<"   bus_no="<<bus_no<<endl;
                 }
             }
-            if (!std::count(ONLY.begin(), ONLY.end(), bus_no)) {
+            if (ONLY.size() <1){}
+            else if (!std::count(ONLY.begin(), ONLY.end(), bus_no)) {
                 continue;
             }
+            if (bus_no.size() <1) continue;
             std::string stack_name = stack->stack_name;
             stack_name.erase(stack_name.find_last_not_of(' ') + 1);
             const uint32_t stack_id = stack->iio_unit_id;
