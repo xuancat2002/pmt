@@ -306,13 +306,11 @@ vector<string> build_csv(vector<struct iio_stacks_on_socket>& iios, vector<struc
     for (auto socket = iios.cbegin(); socket != iios.cend(); ++socket) {
         for (auto stack = socket->stacks.cbegin(); stack != socket->stacks.cend(); ++stack) {
             const std::string socket_name = "Socket" + std::to_string(socket->socket_id);
-            int main_part_id;
             string bus_no;
             for (const auto& part : stack->parts) {
                 for (const auto& pci_device : part.child_pci_devs) {
                     bus_no = get_bus_no(pci_device);
-                    main_part_id=part.part_id;
-                    //cout<<"main_part_id="<<part.part_id<<"   bus_no="<<bus_no<<endl;
+                    //cout<<"   bus_no="<<bus_no<<endl;
                 }
             }
             if (!std::count(ONLY.begin(), ONLY.end(), bus_no)) {
@@ -321,28 +319,47 @@ vector<string> build_csv(vector<struct iio_stacks_on_socket>& iios, vector<struc
             std::string stack_name = stack->stack_name;
             stack_name.erase(stack_name.find_last_not_of(' ') + 1);
             const uint32_t stack_id = stack->iio_unit_id;
-            int part_id;
-            std::map<uint32_t,map<uint32_t,struct counter*>>::const_iterator vunit;
-            for (vunit = v_sort.cbegin(), part_id = 0; vunit != v_sort.cend(); ++vunit, ++part_id) {
+                current_row.clear();
+                current_row.push_back(socket_name);
+                current_row.push_back(bus_no);
+                uint64_t IW=0,IR=0,OR=0,OW=0;
+            //cout<<"v_sort.size()="<<v_sort.size()<<endl;
+            //std::map<uint32_t,map<uint32_t,struct counter*>>::const_iterator vunit;
+            for (auto vunit = v_sort.cbegin(); vunit != v_sort.cend(); ++vunit ) {
                 map<uint32_t, struct counter*> h_array = vunit->second;
                 uint32_t vv_id = vunit->first;
                 vector<uint64_t> h_data;
-                string v_name = h_array[0]->v_event_name;
-                //v_name += string(max_name_width - (v_name.size()), ' ');
-                current_row.clear();
-                current_row.push_back(socket_name);
-                //auto pci_dev = get_root_port_dev(true, part_id, &(*stack));
-                //cout<<"part_id="<<part_id<<"   pci_dev="<<pci_dev<<endl;
-                current_row.push_back(bus_no);
-                current_row.push_back(stack_name);
-                current_row.push_back(v_name);
+                //string v_name = h_array[0]->v_event_name;
+                //current_row.clear();
+                //current_row.push_back(socket_name);
+                //current_row.push_back(bus_no);
+                //current_row.push_back(stack_name);
+                //current_row.push_back(v_name);
+                //cout<<"   bus_no="<<bus_no<<endl;
+                
                 for (map<uint32_t,struct counter*>::const_iterator hunit = h_array.cbegin(); hunit != h_array.cend(); ++hunit) {
                     uint32_t hh_id = hunit->first;
+                    //cout<<"vv_id="<<vv_id<<"    hh_id="<<hh_id<<endl;
                     uint64_t raw_data = hunit->second->data[0][socket->socket_id][stack_id][std::pair<h_id,v_id>(hh_id,vv_id)];
-                    current_row.push_back(std::to_string(raw_data));  // unit_format(raw_data)
+                    if(hh_id<1){
+                        IW+=raw_data;
+                    }else if(hh_id<2){
+                        IR+=raw_data;
+                    }else if(hh_id<3){
+                        OR+=raw_data;
+                    }else if(hh_id<4){
+                        OW+=raw_data;
+                    }
+                    //current_row.push_back(std::to_string(raw_data));  // unit_format(raw_data)
                 }
-                result.push_back(build_csv_row(current_row, csv_delimiter));
+                //result.push_back(build_csv_row(current_row, csv_delimiter));
             }
+            current_row.push_back(std::to_string(IW));
+            current_row.push_back(std::to_string(IR));
+            current_row.push_back(std::to_string(OR));
+            current_row.push_back(std::to_string(OW));
+            result.push_back(build_csv_row(current_row, csv_delimiter));
+            //cout<<"loop end"<<endl;
         }
     }
     return result;
