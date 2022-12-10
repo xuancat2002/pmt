@@ -287,7 +287,14 @@ std::string get_bus_no(const struct pci p){
     rp_pci.append(tmp);
     return rp_pci;
 }
-
+template <typename T>
+std::string to_string_with_precision(const T a_value, const int n = 6)
+{
+    std::ostringstream out;
+    out.precision(n);
+    out << std::fixed << a_value;
+    return out.str();
+}
 vector<string> build_csv(vector<struct iio_stacks_on_socket>& iios, vector<struct counter>& ctrs, const PCIDB& pciDB){
     vector<string> result;
     vector<string> current_row;
@@ -357,10 +364,10 @@ vector<string> build_csv(vector<struct iio_stacks_on_socket>& iios, vector<struc
                 }
                 //result.push_back(build_csv_row(current_row, csv_delimiter));
             }
-            current_row.push_back(std::to_string(IW));
-            current_row.push_back(std::to_string(IR));
-            current_row.push_back(std::to_string(OR));
-            current_row.push_back(std::to_string(OW));
+            current_row.push_back(to_string_with_precision(IW/1000000,2));
+            current_row.push_back(to_string_with_precision(IR/1000000,2));
+            current_row.push_back(to_string_with_precision(OR/1000000,2));
+            current_row.push_back(to_string_with_precision(OW/1000000,2));
             result.push_back(build_csv_row(current_row, csv_delimiter));
             //cout<<"loop end"<<endl;
         }
