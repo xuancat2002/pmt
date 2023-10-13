@@ -8,7 +8,7 @@
 #include <map>
 #include <math.h>
 #include <fstream>
-#include "pcie.h"
+#include "pcm-pcie.h"
 //pcm-raw -e imc/config=0x09,name=ECC_CORRECTABLE_ERRORS/
 //https://github.com/Chester-Gillon/pcm
 
