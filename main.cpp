@@ -61,6 +61,8 @@ string currentDateTime() {
 
 IPlatform *IPlatform::getPlatform(PCM *m, bool csv, bool bw, bool verbose, uint32 delay){
     switch (m->getCPUModel()) {
+	case PCM::SPR:
+            return new EagleStreamPlatform(m, csv, bw, verbose, delay);
         case PCM::ICX:
         case PCM::SNOWRIDGE:
             return new WhitleyPlatform(m, csv, bw, verbose, delay);
@@ -85,11 +87,13 @@ void printMemBW(uint32 numSockets, const ServerUncoreCounterState uncState1[], c
         return roundf(val * 100) / 100;
     };
     uint64 reads=0, writes=0;
+    int READ=0;
+    int WRITE=1;
     for (uint32 i=0; i<numSockets; ++i) {
         uint64 sktReads=0, sktWrites=0;
         for (uint32 channel=0; channel<max_imc_channels; ++channel){
-            reads  = getMCCounter(channel, ServerPCICFGUncore::EventPosition::READ,  uncState1[i], uncState2[i]);
-            writes = getMCCounter(channel, ServerPCICFGUncore::EventPosition::WRITE, uncState1[i], uncState2[i]);
+            reads  = getMCCounter(channel, READ,  uncState1[i], uncState2[i]);
+            writes = getMCCounter(channel, WRITE, uncState1[i], uncState2[i]);
             sktReads+=reads;
             sktWrites+=writes;
             if (SHOW_CHANNELS){
@@ -247,4 +251,3 @@ int main(int argc, char** argv) {
     m->cleanup();
     exit(EXIT_SUCCESS);
 }
-
